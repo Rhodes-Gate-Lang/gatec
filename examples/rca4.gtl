@@ -1,4 +1,4 @@
-import "adders.gate"
+import "adders.gtl"
 
 comp RCA4(a:4, b:4, cin:1) {
     // Chain FullAdders. Using [N,N] assuming inclusive slicing for single bits.
