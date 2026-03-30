@@ -1,4 +1,19 @@
 /**
  * File: Parser.hpp
- * Purpose: Header file for FileIO -> AST
+ * Purpose: File / buffer -> AST entry point.
  */
+#pragma once
+
+#include "Ast.hpp"
+
+#include <optional>
+#include <string>
+#include <string_view>
+
+namespace gate {
+
+std::optional<ast::Program> parse_program(std::string_view source,
+                                          const char *path = nullptr,
+                                          std::string *error_out = nullptr);
+
+} // namespace gate
