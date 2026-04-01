@@ -18,26 +18,20 @@ using ast::Program;
 
 void attach_actions(peg::parser &parser) {
 
-  parser["program"] = [](const SemanticValues &vs) -> Program {
-    Program program;
-    for (const auto &cell : vs) {
-      program.tokens.push_back(std::any_cast<std::string>(cell));
-    }
-    return program;
-  };
-
-  parser["IDENT"] = [](const SemanticValues &vs) -> std::string {
-    return vs.token_to_string();
+  parser["program"] = [](const SemanticValues & /*vs*/) -> Program {
+    return Program{};
   };
 }
 
 static constexpr const char *kGrammar = R"(
-# This is a comment
-program      <- token*
-token        <- IDENT
-IDENT        <- < [a-zA-Z_] [a-zA-Z0-9-]* >
+  # This is a comment
+  program      <- IDENT*
 
-%whitespace  <- [ \t\r\n]* ('//' (![\n] .)* [ \t\r\n]*)*
+
+
+  IDENT        <- < [a-zA-Z_] [a-zA-Z0-9-]* >
+
+  %whitespace  <- [ \t\r\n]* ('//' (![\n] .)* [ \t\r\n]*)*
 )";
 
 } // namespace

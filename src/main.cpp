@@ -44,6 +44,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  std::cout << "parse ok: " << program->tokens.size() << " tokens\n";
+  std::cout << "parse ok: " << program->components.size() << " components\n";
   return 0;
 }
