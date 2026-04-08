@@ -227,3 +227,52 @@ All of these are checked during the AST → DAG pass:
 | `src/Compiler.cpp` | `compile_component`, `compile_body`, `compile_expr`, statement handlers |
 | `include/Simulation.hpp` | Topological sort, `eval` / `operator()` declarations |
 | `src/Simulation.cpp` | Kahn's algorithm, gate evaluation loop |
+
+---
+
+## Implementation Checklist
+
+Each item matches a `// TODO(n):` comment in the source. Recommended order is
+top-to-bottom — each step builds on the ones above it.
+
+### Compiler (`src/Compiler.cpp`)
+
+- [ ] **TODO(1) — `compile_expr`:** Implement `std::visit` over `expr.data`.
+  - `std::string` → look up identifier in symtab, error if missing, return Signal.
+  - `ast::UnaryExpr` → compile operand recursively, create NOT node, return Signal.
+  - `ast::BinExpr` → compile LHS & RHS, check widths match, map `ast::BinOp` to
+    `GateType`, create gate node, return Signal.
+
+- [ ] **TODO(2) — `compile_body` parameter binding:** Loop over `comp.params`,
+  insert each `param.ident → Signal{arg_nodes[i], param.width}` into the symbol
+  table. Validate `arg_nodes.size() == comp.params.size()`.
+
+- [ ] **TODO(3) — `compile_body` statement dispatch:** Use `std::visit` on each
+  statement in `comp.body`:
+  - `InitAssign` → compile RHS expr, check width vs. target, insert into symtab
+    (error on duplicate).
+  - `MutAssign` → look up existing signal, compile RHS, check widths, update symtab.
+  - `CompCall` → look up component AST in registry, resolve arg nodes from symtab,
+    validate counts/widths, call `compile_body` recursively with fresh symtab,
+    bind returned node indices as the call's output names in the caller's symtab.
+  - `ReturnStmt` → look up each name in symtab, push `(name, node_index)` into
+    `dag.outputs` (top-level) or collect into `return_nodes` (inlined).
+
+### Simulation (`src/Simulation.cpp`)
+
+- [ ] **TODO(4) — `topological_sort`:** Kahn's algorithm.
+  - Build consumers adjacency list (for each node, who reads from it?).
+  - Set `in_degree[i] = nodes[i].inputs.size()`.
+  - Seed queue with all nodes where `in_degree == 0`.
+  - Process queue: dequeue → append to `topo_order` → decrement consumers'
+    in-degree → enqueue any that hit zero.
+  - Assert `topo_order.size() == nodes.size()`.
+
+- [ ] **TODO(5) — `operator()` (eval):** Evaluate the circuit.
+  - Set input node values: `nodes[i].val = inputs[i] & mask` for `i < num_inputs`.
+  - Walk `topo_order`, skip Input nodes, compute gate output from input node vals.
+  - Mask each result: `val &= (1ULL << width) - 1`.
+  - Collect `nodes[idx].val` for each output index, return as `vector<uint64_t>`.
+
+- [ ] **TODO(6) — `format_outputs`:** Zip `dag.outputs` names with `results` values.
+  Return `vector<string>` like `"sum = 1"`, `"cout = 0"`.

@@ -20,7 +20,7 @@ size_t DAG::add_node(GateType type, std::vector<size_t> inputs, int width) {
 }
 
 void DAG::topological_sort() {
-  // TODO: Kahn's algorithm.
+  // TODO(4): Kahn's algorithm.
   //
   // 1. Build an in-degree count for each node.
   //    For every node, increment in-degree of each node that lists it as an input.
@@ -48,7 +48,7 @@ void DAG::topological_sort() {
 }
 
 std::vector<uint64_t> DAG::operator()(const std::vector<uint64_t> &inputs) {
-  // TODO: Evaluate the circuit.
+  // TODO(5): Evaluate the circuit.
   //
   // 1. Set input node values:
   //    for i in [0, num_inputs): nodes[i].val = inputs[i] & mask(nodes[i].width)
@@ -74,7 +74,7 @@ std::vector<uint64_t> DAG::operator()(const std::vector<uint64_t> &inputs) {
 
 std::vector<std::string> format_outputs(const DAG &dag,
                                         const std::vector<uint64_t> &results) {
-  // TODO: Pair each result with the corresponding output name from dag.outputs.
+  // TODO(6): Pair each result with the corresponding output name from dag.outputs.
   // Return strings like "sum = 1", "cout = 0".
 
   (void)dag;

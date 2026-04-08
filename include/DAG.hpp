@@ -29,7 +29,7 @@ struct Signal {
 struct DAG {
   std::vector<Node> nodes;
   size_t num_inputs = 0;
-  std::vector<std::pair<std::string, size_t>> outputs;
+  std::vector<std::pair<std::string, size_t>> outputs; // TODO: This should be Signal rather than size_t, right?
   std::vector<size_t> topo_order;
 
   size_t add_node(GateType type, std::vector<size_t> inputs, int width);
