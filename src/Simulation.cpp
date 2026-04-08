@@ -1,83 +1,53 @@
 /**
  * File: Simulation.cpp
- * Purpose: DAG topological sort (Kahn's algorithm) and gate evaluation loop.
+ * Purpose: Circuit preparation (Kahn's algorithm) and gate evaluation loop.
  */
 #include "Simulation.hpp"
 
 #include <cassert>
 #include <queue>
 #include <sstream>
-#include <stdexcept>
 
 namespace gate {
 
-// ── DAG member implementations ──────────────────────────────────────────────
+PreparedCircuit prepare(Circuit circuit) {
+  // TODO: Kahn's algorithm.
+  //
+  // 1. Build in-degree count: in_degree[i] = nodes[i].inputs.size().
+  // 2. Build consumers adjacency list: for each node, which nodes read from it?
+  // 3. Seed queue with all nodes where in_degree == 0 (Input nodes).
+  // 4. Process: dequeue → append to eval_order → decrement consumers' in_degree
+  //    → enqueue any that reach zero.
+  // 5. Assert eval_order.size() == nodes.size() (no cycles).
 
-size_t DAG::add_node(GateType type, std::vector<size_t> inputs, int width) {
-  size_t idx = nodes.size();
-  nodes.push_back(Node{type, std::move(inputs), width, 0});
-  return idx;
+  PreparedCircuit pc;
+  pc.circuit = std::move(circuit);
+  return pc;
 }
 
-void DAG::topological_sort() {
-  // TODO(4): Kahn's algorithm.
+std::vector<uint64_t> simulate(const PreparedCircuit &pc,
+                                const std::vector<uint64_t> &inputs) {
+  // TODO: Evaluate the circuit.
   //
-  // 1. Build an in-degree count for each node.
-  //    For every node, increment in-degree of each node that lists it as an input.
-  //    (Careful: "inputs" on a node means "nodes I read from", so iterate each
-  //     node's inputs vector to find its *dependencies*, then build a reverse
-  //     adjacency list or just count consumers.)
-  //
-  //    Actually, in-degree here means: how many of this node's *own* inputs
-  //    haven't been processed yet. So:
-  //      in_degree[i] = nodes[i].inputs.size()
-  //
-  //    And you need a "consumers" adjacency list: for each node, which other
-  //    nodes list it in their inputs?
-  //
-  // 2. Seed a queue with all nodes that have in_degree == 0 (the Input nodes).
-  //
-  // 3. While queue is non-empty:
-  //    - Dequeue node, append to topo_order.
-  //    - For each consumer of that node, decrement its in_degree.
-  //      If it reaches 0, enqueue it.
-  //
-  // 4. Assert topo_order.size() == nodes.size() (no cycles).
+  // 1. Allocate values buffer: vector<uint64_t>(nodes.size(), 0).
+  // 2. Set input values: values[i] = inputs[i] & mask(width) for i < num_inputs.
+  // 3. Walk pc.eval_order, skip Input nodes:
+  //    - Read input values from values[node.inputs[0]], etc.
+  //    - Compute: Not ~in0, And in0&in1, Or in0|in1, Xor in0^in1.
+  //    - Mask: values[idx] &= (1ULL << width) - 1.
+  // 4. Collect: for each output, push values[output.signal.node].
 
-  topo_order.clear();
-}
-
-std::vector<uint64_t> DAG::operator()(const std::vector<uint64_t> &inputs) {
-  // TODO(5): Evaluate the circuit.
-  //
-  // 1. Set input node values:
-  //    for i in [0, num_inputs): nodes[i].val = inputs[i] & mask(nodes[i].width)
-  //
-  // 2. Walk topo_order. For each node (skip Input nodes):
-  //    - Read input values from nodes[n.inputs[0]].val, etc.
-  //    - Compute:
-  //        Not: ~in0
-  //        And: in0 & in1
-  //        Or:  in0 | in1
-  //        Xor: in0 ^ in1
-  //    - Mask result: val &= (1ULL << width) - 1
-  //    - Store in node.val
-  //
-  // 3. Collect outputs:
-  //    for each (name, idx) in this->outputs: push nodes[idx].val
-
+  (void)pc;
   (void)inputs;
   return {};
 }
 
-// ── Utilities ───────────────────────────────────────────────────────────────
-
-std::vector<std::string> format_outputs(const DAG &dag,
-                                        const std::vector<uint64_t> &results) {
-  // TODO(6): Pair each result with the corresponding output name from dag.outputs.
+std::vector<std::string> format_outputs(const PreparedCircuit &pc,
+                                         const std::vector<uint64_t> &results) {
+  // TODO: Pair each result with the corresponding output name.
   // Return strings like "sum = 1", "cout = 0".
 
-  (void)dag;
+  (void)pc;
   (void)results;
   return {};
 }

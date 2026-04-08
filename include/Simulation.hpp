@@ -1,21 +1,23 @@
 /**
  * File: Simulation.hpp
- * Purpose: DAG evaluation — topological sort and gate simulation.
- *
- * Note: topological_sort() and operator() are declared as members of DAG
- * in DAG.hpp. This file is for any additional simulation utilities.
+ * Purpose: Circuit preparation (topological sort) and evaluation.
  */
 #pragma once
 
-#include "DAG.hpp"
+#include "Circuit.hpp"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace gate {
 
-// Format output values as "name = value" strings for REPL display.
-std::vector<std::string> format_outputs(const DAG &dag,
-                                        const std::vector<uint64_t> &results);
+PreparedCircuit prepare(Circuit circuit);
+
+std::vector<uint64_t> simulate(const PreparedCircuit &pc,
+                                const std::vector<uint64_t> &inputs);
+
+std::vector<std::string> format_outputs(const PreparedCircuit &pc,
+                                         const std::vector<uint64_t> &results);
 
 } // namespace gate

@@ -621,6 +621,8 @@ Recommended order — each phase builds on the previous.
 
 ### Future work
 
+- [ ] Reject statements after `ReturnStmt` — currently `compile_body` keeps processing; should report an error if `return_signals_` is already populated
+- [ ] Detect recursive/cyclic component calls — a "currently compiling" set should be threaded through `compile_inline` to catch mutual recursion before it stack-overflows
 - [ ] Source locations: annotate AST nodes during parsing, thread through to `CompileError`
 - [ ] Compile-to-binary: codegen module that emits C from `PreparedCircuit`
 - [ ] Sequential logic (v2.0): `GateType::Register`, `Simulator` class with `step()`
