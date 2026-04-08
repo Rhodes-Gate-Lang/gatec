@@ -2,277 +2,626 @@
 
 ## Overview
 
-The pipeline is: **Source → AST (parser) → DAG (compiler) → Results (simulation)**.
+Pipeline: **Source → AST** (parser) **→ Circuit** (compiler) **→ PreparedCircuit** (preparation) **→ Results** (simulation)
 
-The compiler takes a parsed `ast::Program` and, on demand, compiles any named
-component into a flat DAG of primitive gate nodes. The simulation layer evaluates
-a compiled DAG given concrete input values.
+The compiler transforms a parsed AST into an immutable **Circuit** — a flat graph of
+primitive gate nodes. A **preparation** step topologically sorts the Circuit into a
+**PreparedCircuit** ready for evaluation. The **simulator** walks the prepared circuit
+to compute output values from concrete inputs.
+
+Two consumption paths are planned:
+
+- **REPL `run` command:** Cache `PreparedCircuit`s by component name. On
+  `run Foo(1,0)`, look up the cache, call `simulate`, display results.
+- **Compile-to-binary:** Take a `PreparedCircuit`, emit C code (one operation per
+  step in `eval_order`), compile with a host C compiler into a standalone executable.
 
 ---
 
-## Data Structures
+## 1. Circuit Representation
 
-### Node
+This is the central design question. The previous `DAG` struct conflated three
+concerns — compile-time graph structure, evaluation ordering, and mutable runtime
+state — into a single type. This section explores alternatives.
 
-A single primitive gate in the circuit.
+### 1.1 Problems with the Current Design
+
+- **`Node::val`** embeds mutable simulation state in a compile-time structure.
+  The compiled graph cannot be treated as immutable; concurrent simulation is
+  impossible; caching is unreliable.
+- **`topo_order`** on the DAG couples evaluation strategy to the graph definition.
+  Topological ordering is a concern of the *consumer* (simulator, codegen), not an
+  intrinsic property of the circuit graph.
+- **`operator()`** on the DAG makes the graph responsible for evaluating itself.
+  There is no seam between "the thing you compile" and "the thing you run," leaving
+  nowhere clean to attach features like signal tracing, stepping, or display.
+- **Registers (v2.0)** would require persistent state across evaluations. In the
+  current design, that state would be even more mutable fields on the DAG, deepening
+  the conflation.
+
+### 1.2 Design Options
+
+#### Option A: Circuit + Simulator (reference-based)
+
+Circuit is an immutable value. Simulator holds a reference to it and owns the
+evaluation state.
 
 ```cpp
+struct Circuit {
+    std::vector<Node> nodes;
+    size_t num_inputs;
+    std::vector<NamedSignal> outputs;
+};
+
+class Simulator {
+    const Circuit& circuit_;
+    std::vector<size_t> topo_order_;
+    std::vector<uint64_t> values_;
+public:
+    explicit Simulator(const Circuit& c);
+    std::vector<uint64_t> run(const std::vector<uint64_t>& inputs);
+};
+```
+
+| Pros | Cons |
+|------|------|
+| Clean separation; no duplication | Reference lifetime coupling — Simulator must not outlive Circuit |
+| Circuit is truly immutable and thread-safe | REPL cache must co-manage Circuit and Simulator lifetimes |
+| Multiple Simulators can share one Circuit | Cannot move or serialize a Simulator independently |
+| Minimal type count | |
+
+#### Option B: Self-Contained Simulator (owns Circuit)
+
+Simulator takes ownership of the Circuit. One object to cache.
+
+```cpp
+class Simulator {
+    Circuit circuit_;
+    std::vector<size_t> topo_order_;
+    std::vector<uint64_t> values_;
+public:
+    explicit Simulator(Circuit c);
+    const Circuit& circuit() const;
+    std::vector<uint64_t> run(const std::vector<uint64_t>& inputs);
+};
+```
+
+| Pros | Cons |
+|------|------|
+| Self-contained — no lifetime issues | Cannot share a Circuit between Simulator and Codegen without copying |
+| REPL cache is just `map<string, Simulator>` | "Simulator" becomes the universal handle, even for non-simulation use |
+| Simple, minimal API | Conceptually muddy: is Simulator the circuit or the evaluator? |
+
+#### Option C: Staged Pipeline (Circuit → PreparedCircuit)
+
+Each pipeline stage is a value-type transformation. PreparedCircuit is the "sorted
+DAG" — a self-contained, evaluation-ready artifact.
+
+```cpp
+struct Circuit {
+    std::vector<Node> nodes;
+    size_t num_inputs = 0;
+    std::vector<NamedSignal> outputs;
+
+    Signal add_node(GateType type, std::vector<size_t> inputs, int width);
+};
+
+struct PreparedCircuit {
+    Circuit circuit;
+    std::vector<size_t> eval_order;
+};
+
+PreparedCircuit prepare(Circuit circuit);
+
+std::vector<uint64_t> simulate(const PreparedCircuit& pc,
+                                const std::vector<uint64_t>& inputs);
+```
+
+| Pros | Cons |
+|------|------|
+| All value types — ownership is trivial (move semantics) | One more type to understand |
+| Pipeline stages are explicit: compile → prepare → simulate | Circuit is moved into PreparedCircuit (access via `pc.circuit`) |
+| `PreparedCircuit` is a named, cacheable "sorted DAG" concept | |
+| `simulate` is a stateless free function — trivial to test | |
+| Both consumption paths take `PreparedCircuit` naturally | |
+| REPL cache is `map<string, PreparedCircuit>` | |
+
+### 1.3 Recommendation: Option C (Staged Pipeline)
+
+Option C best serves both consumption paths and keeps each type focused on one job:
+
+- **Circuit** is the compiler's output. It knows about nodes, inputs, and outputs.
+  It doesn't know how to evaluate itself. It's immutable after compilation (the
+  `add_node` method is a builder used *during* compilation, not after).
+
+- **PreparedCircuit** is the evaluation-ready artifact. It answers the question
+  "what is the sorted DAG?" with a concrete, named type. The REPL caches it. The
+  codegen module reads it. It owns its Circuit via move — no lifetime issues.
+
+- **`simulate`** is a pure function: `(PreparedCircuit, inputs) → outputs`. No
+  mutable state, no side effects, trivially testable.
+
+For the REPL: `map<string, PreparedCircuit>` is the cache. On `run Foo(1, 0)`:
+
+1. Lookup `"Foo"` in cache. On miss: `compile_component` → `prepare` → store.
+2. `auto results = simulate(pc, {1, 0});`
+3. `auto display = format_outputs(pc, results);`
+
+For compile-to-binary: a future `codegen(const PreparedCircuit&)` walks `eval_order`
+and emits C source — one line per gate operation.
+
+**Why not A or B?** Option A's reference coupling is fragile for a project where
+the cache and REPL are the primary consumers. Option B wraps Circuit inside Simulator,
+which is awkward when you want the Circuit for non-simulation purposes (codegen,
+display, analysis). Option C keeps them composable.
+
+### 1.4 Register Extensibility (v2.0)
+
+When sequential logic arrives, the staged pipeline extends cleanly:
+
+1. Add `GateType::Register` to the enum.
+2. Register nodes appear in the Circuit like any other node.
+3. `prepare()` identifies registers and plans the evaluation order:
+   - Registers output their *old* value first.
+   - Combinational logic evaluates.
+   - New register input values are captured.
+4. A **`Simulator` class** layers on top for stateful evaluation:
+
+```cpp
+class Simulator {
+    PreparedCircuit pc_;
+    std::vector<uint64_t> register_state_;
+public:
+    explicit Simulator(PreparedCircuit pc);
+    std::vector<uint64_t> step(const std::vector<uint64_t>& inputs);
+    void reset();
+};
+```
+
+The key principle: **combinational simulation remains a stateless free function**.
+Sequential simulation layers on top with its own state management, without modifying
+`Circuit`, `PreparedCircuit`, or `simulate`.
+
+---
+
+## 2. Signal & Type Safety
+
+### 2.1 Current Issues
+
+- `outputs` uses `pair<string, size_t>` — width information is lost.
+- `compile_body`'s `arg_nodes` is `vector<size_t>` — width must be looked up
+  separately at each use site.
+- `return_nodes` is `vector<size_t>` — same problem.
+- Easy to accidentally pass a loop counter or array length as a "node index."
+
+### 2.2 Proposed Improvements
+
+**Signal as the universal compiler currency.** Every function that refers to a node
+during compilation should use `Signal` (node index + width). This eliminates
+scattered width lookups and catches width mismatches at the point of use rather than
+later during validation.
+
+Concretely:
+- `compile_expr` returns `optional<Signal>` (already does).
+- `compile_inline` takes `vector<Signal>` args and returns `vector<Signal>` outputs.
+- `handle_return` returns `vector<Signal>`.
+- Statement handlers read and write Signals in the SymbolTable.
+
+**Named outputs use a dedicated struct:**
+
+```cpp
+struct NamedSignal {
+    std::string name;
+    Signal signal;
+};
+```
+
+Replacing `pair<string, size_t>` throughout.
+
+**`add_node` returns Signal:**
+
+```cpp
+Signal Circuit::add_node(GateType type, std::vector<size_t> inputs, int width) {
+    size_t idx = nodes.size();
+    nodes.push_back(Node{type, std::move(inputs), width});
+    return Signal{idx, width};
+}
+```
+
+The compiler gets a Signal back immediately — no manual `Signal{idx, width}`
+construction at every call site.
+
+### 2.3 On Templating
+
+C++ templates enforce constraints at **C++ compile time**, but signal widths in
+gate-lang are **runtime values** parsed from source code. A `Signal<4>` template
+parameter would require widths to be known when the C++ compiler runs, which they
+aren't — they come from the `.gate` file. You also couldn't store heterogeneous
+signals in a single container (`vector<Signal<?>>` isn't expressible).
+
+Templates are the wrong tool here. The right approach is **runtime width validation
+at Signal creation/combination points**, reported through the error system. The
+`Signal` struct's value is that it *carries* width alongside the node reference,
+making that validation convenient rather than requiring cross-referencing the node
+array.
+
+---
+
+## 3. Compiler Architecture
+
+### 3.1 Current Issues
+
+- `compile_body` is a monolithic ~90-line function handling all statement types
+  plus parameter binding, with five parameters threaded through every call.
+- No architectural distinction between top-level compilation (fills
+  `circuit.outputs`) and inlined compilation (returns signals to caller). The
+  `ReturnStmt` handler pushes directly to `dag.outputs`, which would corrupt
+  outputs during inlining.
+- `CompCall` currently calls `compile_component` (which creates a *separate* DAG)
+  instead of inlining into the current circuit. The public API doesn't expose a
+  way to compile into an existing circuit.
+- Statement dispatch via cascading `get_if` is verbose and doesn't leverage the
+  variant type system.
+
+### 3.2 Options
+
+#### Option A: ComponentCompiler Class
+
+Encapsulate the compilation context (circuit, registry, errors, symbol table) in a
+class. Each instance represents one scope (one component body). Inlining creates
+a child instance that shares the Circuit but has a fresh SymbolTable.
+
+```cpp
+class ComponentCompiler {
+public:
+    ComponentCompiler(Circuit& circuit,
+                      const ComponentRegistry& registry,
+                      ErrorReporter& errors);
+
+    bool compile_top_level(const ast::Comp& comp);
+
+    std::optional<std::vector<Signal>> compile_inline(
+        const ast::Comp& comp,
+        const std::vector<Signal>& args);
+
+private:
+    Circuit& circuit_;
+    const ComponentRegistry& registry_;
+    ErrorReporter& errors_;
+    SymbolTable symbols_;
+
+    bool handle_init(const ast::InitAssign& stmt);
+    bool handle_mutation(const ast::MutAssign& stmt);
+    bool handle_comp_call(const ast::CompCall& stmt);
+    std::vector<Signal> handle_return(const ast::ReturnStmt& stmt);
+    std::optional<Signal> compile_expr(const ast::Expr& expr);
+};
+```
+
+**How inlining works:**
+
+```
+compile_top_level("FullAdder")
+├── binds params to input nodes
+├── handle_comp_call("HalfAdder")
+│   ├── resolves arg signals from caller's SymbolTable
+│   ├── creates new ComponentCompiler (same circuit_, fresh symbols_)
+│   └── calls compile_inline(HalfAdder, args)
+│       ├── binds params to arg signals
+│       ├── handle_init (sum, carry)
+│       ├── handle_return → returns [sum_sig, carry_sig]
+│       └── caller binds outputs to its own SymbolTable
+├── handle_init (cout)
+└── handle_return → populates circuit_.outputs
+```
+
+| Pros | Cons |
+|------|------|
+| `compile_top_level` vs `compile_inline` solves the dual-output problem | One more class to understand |
+| Shared state lives in fields, not function parameters | |
+| Each handler is small and single-purpose | |
+| Natural recursion: new instance per scope | |
+| Easy to unit test handlers in isolation | |
+
+#### Option B: Visitor Pattern
+
+Define a `StmtVisitor` interface with one virtual method per statement type.
+`CompileVisitor` implements it and carries the compilation context.
+
+```cpp
+struct StmtVisitor {
+    virtual void visit(const ast::InitAssign&) = 0;
+    virtual void visit(const ast::MutAssign&) = 0;
+    virtual void visit(const ast::CompCall&) = 0;
+    virtual void visit(const ast::ReturnStmt&) = 0;
+};
+```
+
+| Pros | Cons |
+|------|------|
+| Classic, well-documented pattern | Verbose boilerplate for a `variant`-based AST |
+| Natural if multiple AST passes are needed | Requires adapter layer: variant → virtual dispatch |
+| | Doesn't naturally solve top-level vs. inline distinction |
+| | Overkill for a single-pass compiler |
+
+### 3.3 Recommendation: Option A (ComponentCompiler)
+
+The ComponentCompiler class is the right fit for gate-lang:
+
+- It **solves the inlining problem** structurally: `compile_top_level` fills
+  `circuit.outputs`; `compile_inline` returns `vector<Signal>` to the caller.
+  Two entry points, one class, no mode flag.
+- It **groups context naturally** — no more threading five parameters through
+  every function call.
+- It **leverages `std::visit`** (or `get_if`) for dispatch, which is natural for
+  a variant-based AST. The visitor pattern adds virtual dispatch *on top of* variant
+  dispatch, which is redundant.
+- It **scales** to new statement types: add a handler method, add a case to the
+  dispatch.
+
+The class is an **implementation detail** of `Compiler.cpp`. The public API stays
+simple:
+
+```cpp
+ComponentRegistry build_registry(const ast::Program& program);
+
+std::optional<Circuit> compile_component(const std::string& name,
+                                          const ComponentRegistry& registry,
+                                          ErrorReporter& errors);
+```
+
+---
+
+## 4. Error Handling
+
+### 4.1 Current Issues
+
+- `string* error_out` is fragile: nullable, holds only one error, no structure.
+- The `report()` helper returns `bool` but callers return `optional<T>` — the
+  return types don't compose.
+- No source location, no error categorization, no way to accumulate multiple errors.
+- Many error sites are TODO comments with no early returns — execution falls through.
+
+### 4.2 Proposed Design
+
+**Structured error type** with categorization and (future) source locations:
+
+```cpp
+struct SourceLocation {
+    std::string file;
+    size_t line = 0;
+    size_t col = 0;
+};
+
+struct CompileError {
+    enum class Kind {
+        UndefinedSymbol,
+        UndefinedComponent,
+        DuplicateSymbol,
+        WidthMismatch,
+        ArityMismatch,
+        InternalError,
+    };
+
+    Kind kind;
+    std::string message;
+    SourceLocation location;
+};
+```
+
+**Error accumulator** that collects all errors from a compilation:
+
+```cpp
+class ErrorReporter {
+public:
+    void report(CompileError::Kind kind, const std::string& message);
+    void report(CompileError error);
+
+    bool has_errors() const;
+    const std::vector<CompileError>& errors() const;
+    std::string format_all() const;
+
+private:
+    std::vector<CompileError> errors_;
+};
+```
+
+**Usage pattern** in statement handlers — report and bail:
+
+```cpp
+bool ComponentCompiler::handle_init(const ast::InitAssign& stmt) {
+    if (symbols_.contains(stmt.target.ident)) {
+        errors_.report(CompileError::Kind::DuplicateSymbol,
+                       "'" + stmt.target.ident + "' is already defined");
+        return false;
+    }
+    auto sig = compile_expr(stmt.value);
+    if (!sig) return false;
+    if (sig->width != stmt.target.width) {
+        errors_.report(CompileError::Kind::WidthMismatch,
+                       "'" + stmt.target.ident + "' declared as width " +
+                       std::to_string(stmt.target.width) +
+                       " but expression has width " +
+                       std::to_string(sig->width));
+        return false;
+    }
+    symbols_[stmt.target.ident] = *sig;
+    return true;
+}
+```
+
+**Source locations** require the parser to annotate AST nodes (cpp-peglib provides
+line/col info during parsing). This is a follow-up task — the `ErrorReporter`
+architecture works with or without locations. When locations are added to the AST,
+errors will automatically carry them through to display.
+
+---
+
+## 5. Complete Type Reference
+
+All types for the redesigned system in one place:
+
+```cpp
+namespace gate {
+
+// ── Primitives ──────────────────────────────────────────────────────────────
+
 enum class GateType { Input, And, Or, Xor, Not };
 
-struct Node {
-    GateType type;
-    std::vector<size_t> inputs;  // indices into DAG::nodes (0 for Input, 1 for Not, 2 for binary)
-    int width;                   // output bus width in bits
-    uint64_t val = 0;           // simulation scratch — holds the node's current output
-};
-```
-
-- **Input nodes** have an empty `inputs` vector. Their `val` is set externally before evaluation.
-- **NOT** has 1 entry in `inputs`.
-- **AND / OR / XOR** have 2 entries in `inputs`.
-- `width` is set at compile time based on the operands. All inputs to a binary gate must
-  share the same width; the output width matches.
-- After each gate evaluation, mask `val` with `(1ULL << width) - 1` to clear stray upper bits.
-
-### DAG
-
-The compiled circuit for one component, fully flattened (no sub-component references).
-
-```cpp
-struct DAG {
-    std::vector<Node> nodes;
-
-    size_t num_inputs;
-    // Input nodes are always nodes[0..num_inputs). This is a convention
-    // maintained by the compiler — it creates input nodes first.
-
-    std::vector<std::pair<std::string, size_t>> outputs;
-    // Each entry is (signal_name, node_index). Populated from the component's
-    // return statement. Names are kept for REPL display ("sum = 1, cout = 0").
-
-    std::vector<size_t> topo_order;
-    // Filled once after compilation by running Kahn's algorithm.
-    // eval() walks this in order, skipping input nodes.
-
-    size_t add_node(GateType type, std::vector<size_t> inputs, int width);
-    // Appends a node and returns its index.
-
-    std::vector<uint64_t> operator()(const std::vector<uint64_t>& inputs);
-    // Set input node values, walk topo_order evaluating each gate, return output values.
-};
-```
-
-### ComponentRegistry
-
-Lookup table from component name to its AST definition. Built once from the
-parsed program (including imports). Used during compilation to inline component calls.
-
-```cpp
-using ComponentRegistry = std::unordered_map<std::string, ast::Comp>;
-```
-
-### SymbolTable
-
-Maps signal names to (node_index, width) within a single compilation scope.
-Each component body and each inlined call gets its own symbol table.
-
-```cpp
 struct Signal {
     size_t node;
     int width;
 };
+
+struct NamedSignal {
+    std::string name;
+    Signal signal;
+};
+
+struct Node {
+    GateType type;
+    std::vector<size_t> inputs;
+    int width;
+};
+
+// ── Circuit (compiler output, immutable after compilation) ──────────────────
+
+struct Circuit {
+    std::vector<Node> nodes;
+    size_t num_inputs = 0;
+    std::vector<NamedSignal> outputs;
+
+    Signal add_node(GateType type, std::vector<size_t> inputs, int width);
+};
+
+// ── PreparedCircuit (topologically sorted, evaluation-ready) ────────────────
+
+struct PreparedCircuit {
+    Circuit circuit;
+    std::vector<size_t> eval_order;
+};
+
+PreparedCircuit prepare(Circuit circuit);
+
+// ── Simulation ──────────────────────────────────────────────────────────────
+
+std::vector<uint64_t> simulate(const PreparedCircuit& pc,
+                                const std::vector<uint64_t>& inputs);
+
+std::vector<std::string> format_outputs(const PreparedCircuit& pc,
+                                         const std::vector<uint64_t>& results);
+
+// ── Error Handling ──────────────────────────────────────────────────────────
+
+struct SourceLocation {
+    std::string file;
+    size_t line = 0;
+    size_t col = 0;
+};
+
+struct CompileError {
+    enum class Kind {
+        UndefinedSymbol,
+        UndefinedComponent,
+        DuplicateSymbol,
+        WidthMismatch,
+        ArityMismatch,
+        InternalError,
+    };
+    Kind kind;
+    std::string message;
+    SourceLocation location;
+};
+
+class ErrorReporter {
+public:
+    void report(CompileError::Kind kind, const std::string& message);
+    void report(CompileError error);
+    bool has_errors() const;
+    const std::vector<CompileError>& errors() const;
+    std::string format_all() const;
+private:
+    std::vector<CompileError> errors_;
+};
+
+// ── Compiler ────────────────────────────────────────────────────────────────
+
+using ComponentRegistry = std::unordered_map<std::string, ast::Comp>;
 using SymbolTable = std::unordered_map<std::string, Signal>;
+
+ComponentRegistry build_registry(const ast::Program& program);
+
+std::optional<Circuit> compile_component(const std::string& name,
+                                          const ComponentRegistry& registry,
+                                          ErrorReporter& errors);
+
+} // namespace gate
 ```
 
 ---
 
-## Compilation (AST → DAG)
-
-### Entry Point
-
-```cpp
-DAG compile_component(const std::string& name,
-                      const ComponentRegistry& registry,
-                      std::string* error_out);
-```
-
-Looks up `name` in the registry, creates a fresh DAG, and calls `compile_body`.
-
-### compile_body
-
-```cpp
-void compile_body(const ast::Comp& comp,
-                  const std::vector<size_t>& arg_nodes,
-                  DAG& dag,
-                  SymbolTable& symtab,
-                  const ComponentRegistry& registry,
-                  std::string* error_out);
-```
-
-This is the core recursive function. It processes one component's body:
-
-1. **Bind parameters:** For each formal parameter, map its name → the corresponding
-   entry in `arg_nodes` in the symbol table. (For top-level calls, `arg_nodes` are the
-   input nodes. For inlined calls, they're the caller's argument node indices.)
-2. **Walk statements** in order, dispatching on variant type.
-3. This function is called both from `compile_component` (top-level) and from
-   itself when inlining a `CompCall`.
-
-### Statement Handling
-
-**InitAssign** (`sum:1 = a XOR b;`)
-1. Call `compile_expr` on the RHS → get `(node_index, inferred_width)`.
-2. Check `inferred_width == target.width`. Report error on mismatch.
-3. Add `target.ident → Signal{node_index, width}` to the symbol table.
-
-**MutAssign** (`flag = NOT flag;`)
-1. Look up the existing signal to get its declared width.
-2. Call `compile_expr` on the RHS → get `(node_index, inferred_width)`.
-3. Check widths match.
-4. Update the symbol table entry to point to the new node index.
-
-**CompCall** (`ha1_sum:1, ha1_carry:1 = HalfAdder(a, b);`)
-1. Look up the called component's AST in the `ComponentRegistry`.
-2. Resolve each argument name in the caller's symbol table to get the actual node indices.
-3. Validate argument count matches parameter count. Validate widths match.
-4. Create a **fresh** symbol table for the callee.
-5. Call `compile_body` recursively with the callee's AST, passing the argument
-   node indices. This adds the callee's gates directly into the same DAG.
-6. After `compile_body` returns, the callee's return statement will have been
-   processed. Collect the output node indices from the callee's symbol table
-   (via the callee's return names).
-7. Bind each output name from the `CompCall` into the **caller's** symbol table.
-
-**ReturnStmt** (`return sum, cout;`)
-1. For each name, look up its node index in the symbol table.
-2. Push `(name, node_index)` into `dag.outputs`.
-
-### compile_expr
-
-```cpp
-Signal compile_expr(const ast::Expr& expr,
-                    DAG& dag,
-                    const SymbolTable& symtab,
-                    std::string* error_out);
-```
-
-Recursive. Returns the node index and inferred width for the expression.
-
-- **Identifier:** Look up in symbol table. Return its `Signal` as-is (no new node).
-- **UnaryExpr (NOT):** Compile the operand recursively. Create a NOT node
-  with the operand's index. Width = operand's width.
-- **BinExpr (AND/OR/XOR):** Compile LHS and RHS recursively. Check their
-  widths match — error if not. Create the gate node. Width = shared input width.
-
----
-
-## Simulation (DAG → Results)
-
-### Topological Sort (Kahn's Algorithm)
-
-Run once after compilation to populate `dag.topo_order`.
-
-1. Compute in-degree for every node.
-2. Seed queue with all zero-in-degree nodes (the input nodes).
-3. Process: dequeue a node, append to `topo_order`, decrement in-degree
-   of all nodes that use it as an input. Enqueue any that reach zero.
-4. If `topo_order.size() != nodes.size()`, there's a cycle — should never
-   happen if compilation is correct.
-
-### eval (operator())
-
-Called for each `run` command in the REPL.
-
-1. Set `nodes[i].val` for each input node `i` from the input arguments.
-2. Walk `topo_order`. For each non-input node, read its input nodes' `val`s,
-   compute the gate operation, mask to width, store in `node.val`.
-3. Collect output values from `dag.outputs` indices.
-4. Return as `vector<uint64_t>` (or named pairs for display).
-
----
-
-## Caching
-
-The REPL maintains a `map<string, DAG>` of already-compiled components.
-On `run FullAdder(1, 1, 0)`:
-
-1. Check cache for `"FullAdder"`. If miss, call `compile_component`.
-2. Topological sort is already done (stored in the DAG).
-3. Call `dag({1, 1, 0})`.
-4. Display named outputs.
-
-Invalidate cache on source file reload.
-
----
-
-## Error Checking (during compilation)
-
-All of these are checked during the AST → DAG pass:
-
-- **Undefined signal:** Identifier not found in symbol table.
-- **Undefined component:** CompCall references name not in the registry.
-- **Argument count mismatch:** CompCall arg count ≠ component param count.
-- **Width mismatch:** Binary gate operands differ in width, or assigned width
-  doesn't match expression width, or CompCall arg/param widths differ.
-- **Duplicate signal name:** InitAssign with a name already in the symbol table.
-
----
-
-## File Layout
+## 6. File Layout
 
 | File | Responsibility |
 |------|---------------|
-| `include/DAG.hpp` | `GateType`, `Node`, `Signal`, `DAG` struct definitions |
-| `include/Compiler.hpp` | `ComponentRegistry`, `compile_component` declaration |
-| `src/Compiler.cpp` | `compile_component`, `compile_body`, `compile_expr`, statement handlers |
-| `include/Simulation.hpp` | Topological sort, `eval` / `operator()` declarations |
-| `src/Simulation.cpp` | Kahn's algorithm, gate evaluation loop |
+| `include/Circuit.hpp` | `GateType`, `Node`, `Signal`, `NamedSignal`, `Circuit`, `PreparedCircuit` |
+| `include/Compiler.hpp` | `ComponentRegistry`, `SymbolTable`, `compile_component`, `build_registry` |
+| `include/Simulation.hpp` | `prepare`, `simulate`, `format_outputs` |
+| `include/Error.hpp` | `SourceLocation`, `CompileError`, `ErrorReporter` |
+| `src/Compiler.cpp` | `ComponentCompiler` (internal class), all compilation logic |
+| `src/Simulation.cpp` | `prepare` (Kahn's algorithm), `simulate` (eval loop), `format_outputs` |
+
+`DAG.hpp` is retired. Its contents are reorganized into `Circuit.hpp` and
+`Simulation.hpp`.
 
 ---
 
-## Implementation Checklist
+## 7. Implementation Checklist
 
-Each item matches a `// TODO(n):` comment in the source. Recommended order is
-top-to-bottom — each step builds on the ones above it.
+Recommended order — each phase builds on the previous.
 
-### Compiler (`src/Compiler.cpp`)
+### Phase 1: Foundation (types and file structure)
 
-- [ ] **TODO(1) — `compile_expr`:** Implement `std::visit` over `expr.data`.
-  - `std::string` → look up identifier in symtab, error if missing, return Signal.
-  - `ast::UnaryExpr` → compile operand recursively, create NOT node, return Signal.
-  - `ast::BinExpr` → compile LHS & RHS, check widths match, map `ast::BinOp` to
-    `GateType`, create gate node, return Signal.
+- [ ] Create `include/Error.hpp` with `SourceLocation`, `CompileError`, `ErrorReporter`
+- [ ] Implement `ErrorReporter` methods in `src/Error.cpp`
+- [ ] Rename `include/DAG.hpp` → `include/Circuit.hpp`
+- [ ] Rename `DAG` → `Circuit`, remove `Node::val`, remove `topo_order`, remove `operator()`
+- [ ] Add `NamedSignal` struct; change `outputs` to `vector<NamedSignal>`
+- [ ] Have `add_node` return `Signal` instead of `size_t`
+- [ ] Add `PreparedCircuit` struct to `Circuit.hpp`
+- [ ] Update `include/Simulation.hpp`: declare `prepare`, `simulate`, `format_outputs`
+- [ ] Update `include/Compiler.hpp`: replace `string* error_out` with `ErrorReporter&`
+- [ ] Verify the project still compiles (stubs are fine)
 
-- [ ] **TODO(2) — `compile_body` parameter binding:** Loop over `comp.params`,
-  insert each `param.ident → Signal{arg_nodes[i], param.width}` into the symbol
-  table. Validate `arg_nodes.size() == comp.params.size()`.
+### Phase 2: Compiler rewrite
 
-- [ ] **TODO(3) — `compile_body` statement dispatch:** Use `std::visit` on each
-  statement in `comp.body`:
-  - `InitAssign` → compile RHS expr, check width vs. target, insert into symtab
-    (error on duplicate).
-  - `MutAssign` → look up existing signal, compile RHS, check widths, update symtab.
-  - `CompCall` → look up component AST in registry, resolve arg nodes from symtab,
-    validate counts/widths, call `compile_body` recursively with fresh symtab,
-    bind returned node indices as the call's output names in the caller's symtab.
-  - `ReturnStmt` → look up each name in symtab, push `(name, node_index)` into
-    `dag.outputs` (top-level) or collect into `return_nodes` (inlined).
+- [ ] Implement `ComponentCompiler` class skeleton in `Compiler.cpp`
+- [ ] Implement `compile_expr` as a `ComponentCompiler` method
+- [ ] Implement `handle_init`
+- [ ] Implement `handle_mutation`
+- [ ] Implement `handle_return` (with top-level vs inline distinction)
+- [ ] Implement `handle_comp_call` with recursive `compile_inline`
+- [ ] Implement `compile_top_level` (creates input nodes, dispatches, fills outputs)
+- [ ] Wire up public `compile_component` → `ComponentCompiler::compile_top_level`
+- [ ] Test: compile `HalfAdder` from `adders.gate`, inspect Circuit nodes
 
-### Simulation (`src/Simulation.cpp`)
+### Phase 3: Simulation
 
-- [ ] **TODO(4) — `topological_sort`:** Kahn's algorithm.
-  - Build consumers adjacency list (for each node, who reads from it?).
-  - Set `in_degree[i] = nodes[i].inputs.size()`.
-  - Seed queue with all nodes where `in_degree == 0`.
-  - Process queue: dequeue → append to `topo_order` → decrement consumers'
-    in-degree → enqueue any that hit zero.
-  - Assert `topo_order.size() == nodes.size()`.
+- [ ] Implement `prepare()` — Kahn's algorithm → `PreparedCircuit`
+- [ ] Implement `simulate()` — walk `eval_order`, compute gate outputs, collect results
+- [ ] Implement `format_outputs()` — zip `NamedSignal` names with result values
+- [ ] Test: `prepare` + `simulate` on compiled `HalfAdder`, verify truth table
 
-- [ ] **TODO(5) — `operator()` (eval):** Evaluate the circuit.
-  - Set input node values: `nodes[i].val = inputs[i] & mask` for `i < num_inputs`.
-  - Walk `topo_order`, skip Input nodes, compute gate output from input node vals.
-  - Mask each result: `val &= (1ULL << width) - 1`.
-  - Collect `nodes[idx].val` for each output index, return as `vector<uint64_t>`.
+### Phase 4: Integration
 
-- [ ] **TODO(6) — `format_outputs`:** Zip `dag.outputs` names with `results` values.
-  Return `vector<string>` like `"sum = 1"`, `"cout = 0"`.
+- [ ] Update `main.cpp`: parse → compile → prepare → simulate → display
+- [ ] Test end-to-end with `FullAdder` (exercises inlining)
+- [ ] Add REPL loop with `PreparedCircuit` cache
+- [ ] Test: `run FullAdder(1, 1, 0)` in REPL produces `sum = 0, cout = 1`
+
+### Future work
+
+- [ ] Source locations: annotate AST nodes during parsing, thread through to `CompileError`
+- [ ] Compile-to-binary: codegen module that emits C from `PreparedCircuit`
+- [ ] Sequential logic (v2.0): `GateType::Register`, `Simulator` class with `step()`
+- [ ] Multi-bit operations: slicing (`a[0:0]`), concatenation (`{sum3, sum2, sum1, sum0}`)
