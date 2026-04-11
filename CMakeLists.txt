@@ -36,6 +36,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpp-peglib)
 
+# --- gateo-cpp (.gateo protobuf I/O; target gateo::gateo) ---
+# Pinned to https://github.com/Rhodes-Gate-Lang/gateo-cpp/releases/tag/v1.0.0
+# Requires protoc + libprotobuf (system packages), or pass -DGATEO_FETCH_PROTOBUF=ON.
+set(GATEO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  gateo-cpp
+  GIT_REPOSITORY https://github.com/Rhodes-Gate-Lang/gateo-cpp.git
+  GIT_TAG        v1.0.0
+)
+FetchContent_MakeAvailable(gateo-cpp)
+
 # --- gate-lang library (everything except the CLI entry point) ---
 add_library(gate_lang STATIC
   src/compiler/Compiler.cpp
@@ -50,8 +61,8 @@ target_include_directories(gate_lang
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-# PUBLIC: headers under include/ may include <peglib.h>
-target_link_libraries(gate_lang PUBLIC peglib)
+# PUBLIC: headers under include/ may include <peglib.h>; .gateo interop via gateo-cpp
+target_link_libraries(gate_lang PUBLIC peglib gateo::gateo)
 
 # --- CLI ---
 add_executable(gate-lang-cli src/main.cpp)

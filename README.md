@@ -21,7 +21,12 @@ comp FullAdder(a:1, b:1, cin:1) {
 
 ## Building
 
-Requires CMake 3.20+ and a C++17 compiler. cpp-peglib is fetched automatically.
+Requires CMake 3.20+ and a C++17 compiler. Dependencies fetched by CMake:
+
+- [cpp-peglib](https://github.com/yhirose/cpp-peglib) (parser)
+- [gateo-cpp](https://github.com/Rhodes-Gate-Lang/gateo-cpp) at tag `v1.0.0` (`.gateo` protobuf types and I/O), which in turn downloads the matching [gateo-schema](https://github.com/Rhodes-Gate-Lang/gateo-schema) release at configure time
+
+You also need **Protocol Buffers** installed: the `protoc` compiler and the C++ protobuf library (`protobuf` / `libprotobuf` packages on most systems). If those are not available, configure with `-DGATEO_FETCH_PROTOBUF=ON` so gateo-cpp builds protobuf from source (slower first configure).
 
 ```sh
 cmake -B build

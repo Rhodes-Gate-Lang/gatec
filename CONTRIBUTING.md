@@ -25,6 +25,8 @@ and you can build the project with:
 and then run it with:
 `./build/gate-lang`
 
+CMake fetches cpp-peglib and gateo-cpp automatically; gateo-cpp needs **protoc** and the C++ protobuf library on your machine (or pass `-DGATEO_FETCH_PROTOBUF=ON` to the first `cmake` command). The first configure also downloads the pinned gateo-schema release from GitHub, so you need network access then.
+
 4. Create a Branch
 Create a new branch for your specific issue. Use a prefix like feature/, bugfix/, or docs/, followed by a short description and the issue number.
 ```bash
