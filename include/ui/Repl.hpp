@@ -1,11 +1,12 @@
 /**
  * File: Repl.hpp
- * Purpose: Interactive REPL for compiling and simulating gate-lang components.
+ * Purpose: Interactive REPL for compiling gate-lang components.
  */
 #pragma once
 
 #include "compiler/ComponentRegistry.hpp"
-#include "simulation/PreparedCircuit.hpp"
+#include "compiler/GateoAliases.hpp"
+#include "core/Ast.hpp"
 
 #include <string>
 #include <unordered_map>
@@ -19,7 +20,8 @@ public:
 
 private:
   ComponentRegistry registry_;
-  std::unordered_map<std::string, PreparedCircuit> cache_;
+  /// // TODO: Once simulation reads GateObject, use compiled objects here (or drop cache).
+  std::unordered_map<std::string, GateObject> cache_;
 
   void handle_run(const std::string &args);
   void handle_list() const;

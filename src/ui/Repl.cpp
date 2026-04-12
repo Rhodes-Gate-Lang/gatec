@@ -8,8 +8,6 @@
 #include "ui/Repl.hpp"
 #include "compiler/CompileError.hpp"
 #include "compiler/Compiler.hpp"
-#include "simulation/Simulation.hpp"
-#include "ui/OutputFormatter.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -190,27 +188,26 @@ void Repl::handle_run(const std::string &args) {
   auto cache_hit = cache_.find(cmd->component);
   if (cache_hit == cache_.end()) {
     try {
-      Circuit circuit = compile_component(cmd->component, registry_);
-      cache_hit = cache_.emplace(cmd->component, prepare(std::move(circuit))).first;
+      GateObject object =
+          compile_component(cmd->component, registry_);
+      cache_hit = cache_.emplace(cmd->component, std::move(object)).first;
     } catch (const CompileError &e) {
       std::cerr << "compile error: " << e.what() << "\n";
       return;
     }
   }
 
-  const PreparedCircuit &pc = cache_hit->second;
+  (void)cache_hit;
+  // TODO: Simulation / output formatting from GateObject (no PreparedCircuit).
+  // TODO: Reuse argument parsing below once simulate() accepts GateObject + input values.
   const auto &params = registry_.lookup(cmd->component).params;
 
-  // Validate argument count.
   if (cmd->args.size() != params.size()) {
     std::cerr << "error: " << cmd->component << " expects " << params.size()
               << " arguments but got " << cmd->args.size() << "\n";
     return;
   }
 
-  // Parse and validate each input value.
-  std::vector<uint64_t> input_values;
-  input_values.reserve(params.size());
   for (size_t i = 0; i < cmd->args.size(); ++i) {
     auto parsed = parse_value(cmd->args[i]);
     if (!parsed) {
@@ -222,15 +219,9 @@ void Repl::handle_run(const std::string &args) {
       std::cerr << "error: " << error << "\n";
       return;
     }
-    input_values.push_back(parsed->bits);
   }
 
-  // Simulate and display.
-  auto results = simulate(pc, input_values);
-  auto output_lines = format_outputs(pc, results);
-  for (const auto &line : output_lines) {
-    std::cout << "  " << line << "\n";
-  }
+  std::cout << "  (run: TODO simulate from GateObject; compiled model cached)\n";
 }
 
 // ── handle_list ─────────────────────────────────────────────────────────────

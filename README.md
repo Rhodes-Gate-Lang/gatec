@@ -24,7 +24,7 @@ comp FullAdder(a:1, b:1, cin:1) {
 Requires CMake 3.20+ and a C++17 compiler. Dependencies fetched by CMake:
 
 - [cpp-peglib](https://github.com/yhirose/cpp-peglib) (parser)
-- [gateo-cpp](https://github.com/Rhodes-Gate-Lang/gateo-cpp) at tag [`v2.0.1`](https://github.com/Rhodes-Gate-Lang/gateo-cpp/releases/tag/v2.0.1) (`.gateo` I/O and idiomatic `gateo::v2::view` types), which downloads the matching [gateo-schema](https://github.com/Rhodes-Gate-Lang/gateo-schema) **v2.0.1** release at configure time
+- [gateo-cpp](https://github.com/Rhodes-Gate-Lang/gateo-cpp) at tag [`v2.0.1`](https://github.com/Rhodes-Gate-Lang/gateo-cpp/releases/tag/v2.0.1) (`.gateo` I/O; the compiler uses the alias `gate::GateObject` → `gateo::v2::view::GateObject` from `compiler/GateoAliases.hpp`), which downloads the matching [gateo-schema](https://github.com/Rhodes-Gate-Lang/gateo-schema) **v2.0.1** release at configure time
 
 You also need **Protocol Buffers** installed: the `protoc` compiler and the C++ protobuf library (`protobuf` / `libprotobuf` packages on most systems). If those are not available, configure with `-DGATEO_FETCH_PROTOBUF=ON` so gateo-cpp builds protobuf from source (slower first configure).
 

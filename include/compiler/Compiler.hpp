@@ -1,22 +1,21 @@
 /**
  * File: Compiler.hpp
- * Purpose: AST -> Circuit compilation.
+ * Purpose: AST → full GateObject compilation (same shape as a .gateo file).
  *
- * Compiles a named component (and any components it depends on) into a flat
- * gate graph. Each dependency is compiled once and inlined by index remapping.
+ * Each dependency is compiled once and cached; inlining splices callee GateObjects into the caller.
  *
- * Throws CompileError on any compilation failure.
+ * Throws CompileError on compilation failure.
  */
 #pragma once
 
 #include "compiler/ComponentRegistry.hpp"
-#include "core/Circuit.hpp"
+#include "compiler/GateoAliases.hpp"
 
 #include <string>
 
 namespace gate {
 
-Circuit compile_component(const std::string &name,
-                          const ComponentRegistry &registry);
+[[nodiscard]] GateObject compile_component(
+    const std::string &name, const ComponentRegistry &registry);
 
 } // namespace gate

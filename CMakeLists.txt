@@ -50,7 +50,10 @@ FetchContent_MakeAvailable(gateo-cpp)
 
 # --- gate-lang library (everything except the CLI entry point) ---
 add_library(gate_lang STATIC
+  src/compiler/CompilationSession.cpp
+  src/compiler/ComponentCompiler.cpp
   src/compiler/Compiler.cpp
+  src/compiler/InlineGateo.cpp
   src/parser/Parser.cpp
   src/simulation/Simulation.cpp
   src/ui/OutputFormatter.cpp
