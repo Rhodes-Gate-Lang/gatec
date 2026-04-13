@@ -7,17 +7,11 @@
 
 #include "gateo/v2/view.hpp"
 
-namespace gateo::v2::view {
-
-inline bool operator==(Version const& a, Version const& b) noexcept {
-  return a.major == b.major && a.minor == b.minor;
-}
-
-} // namespace gateo::v2::view
-
 namespace gate {
 
 using GateObject = gateo::v2::view::GateObject;
+using Node = gateo::v2::view::Node;
+using GateType = gateo::v2::view::GateType;
 using GateVersion = gateo::v2::view::Version;
 using ComponentInstance = gateo::v2::view::ComponentInstance;
 

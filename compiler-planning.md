@@ -12,9 +12,9 @@
 ## Architecture Overview
 
 ```
-┌──────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────┐
 │  compile_component(ast::Comp) -> GateObject           │
-│                                                      │
+│                                                       │
 │  1. Create local NodeEmitter + SymbolTable            │
 │  2. Emit Input nodes for params                       │
 │  3. For each statement:                               │
@@ -24,29 +24,29 @@
 │               → bind output names                     │
 │     - ReturnStmt: emit Output nodes, record indices   │
 │  4. Return emitter.take()                             │
-│                                                      │
+│                                                       │
 │  Throws CompileError on any failure.                  │
-└──────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────┘
 
 ┌──────────────────────┐    ┌───────────────────────────┐
-│  CompCache            │    │  inline_gate_object()      │
+│  CompCache           │    │  inline_gate_object()     │
 │                      │    │                           │
-│  resolve(name):      │    │  Pure function:            │
-│    if cached → ret   │    │  (GateObject, emitter)     │
-│    if on disk → load │    │  → InlineResult            │
+│  resolve(name):      │    │  Pure function:           │
+│    if cached → ret   │    │  (GateObject, emitter)    │
+│    if on disk → load │    │  → InlineResult           │
 │    if in_progress →  │    │                           │
-│      throw Cyclic    │    │  Remaps all indices,       │
-│    else → compile    │    │  splices into parent.      │
+│      throw Cyclic    │    │  Remaps all indices,      │
+│    else → compile    │    │  splices into parent.     │
 │      from AST        │    │                           │
 └──────────────────────┘    └───────────────────────────┘
 
 ┌──────────────────────┐    ┌───────────────────────────┐
-│  NodeEmitter          │    │  SymbolTable               │
-│  (append-only)       │    │  (name → node index)       │
+│  NodeEmitter         │    │  SymbolTable              │
+│  (append-only)       │    │  (name → node index)      │
 │                      │    │                           │
-│  emit_node → u32    │    │  bind() — throws Dup       │
-│  emit_component     │    │  resolve() — throws Undef  │
-│  take() → GateObj   │    │                           │
+│  emit_node → u32     │    │  bind() — throws Dup      │
+│  emit_component      │    │  resolve() — throws Undef │
+│  take() → GateObj    │    │                           │
 └──────────────────────┘    └───────────────────────────┘
 ```
 
@@ -261,6 +261,91 @@ Given `(out1, out2) = SubComp(a, b)`:
 ### Partial emission on error
 
 If a throw occurs mid-compilation, the `NodeEmitter`'s internal `GateObject` is left in an inconsistent state. This is fine — the emitter is stack-local, so it's destroyed when the exception unwinds. No cleanup needed.
+
+## File Layout
+
+```
+include/compiler/
+├── CompCache.hpp              # Cache + cycle detection + dispatch
+├── CompileComponent.hpp       # compile_component() — top-level entry
+├── CompileError.hpp           # Exception hierarchy (existing, unchanged)
+├── CompileExpr.hpp            # compile_expr() — expression tree → nodes
+├── CompileStatement.hpp       # compile_statement() — variant dispatcher
+├── GateoAliases.hpp           # Type aliases for gateo-cpp (existing, unchanged)
+├── InlineGateo.hpp            # inline_gate_object() — pure inliner
+├── NodeEmitter.hpp            # Append-only GateObject builder (existing, unchanged)
+├── SymbolTable.hpp            # Name → node index map (existing, unchanged)
+└── statement/
+    ├── stmt_comp_call.hpp     # stmt_comp_call() — subcomponent inlining
+    ├── stmt_init.hpp          # stmt_init() — init assignment
+    ├── stmt_mutation.hpp      # stmt_mutation() — reassignment
+    └── stmt_return.hpp        # stmt_return() — output emission
+
+src/compiler/
+├── CompCache.cpp
+├── CompileComponent.cpp
+├── CompileExpr.cpp
+├── CompileStatement.cpp
+├── InlineGateo.cpp
+├── NodeEmitter.cpp            # (existing, unchanged)
+├── SymbolTable.cpp            # (existing, unchanged)
+└── statement/
+    ├── comp_call.cpp
+    ├── init.cpp
+    ├── mutation.cpp
+    └── return_stmt.cpp
+```
+
+### Placement rationale
+
+**Top-level `include/compiler/` for orchestration and infrastructure.** These files
+define the public interfaces that coordinate compilation: the cache, the three
+`compile_*` free functions, the emitter, and the symbol table. They live together
+because they form the compiler's API surface — any external caller (CLI, tests)
+only needs to include from this level.
+
+**`statement/` subdirectory for per-statement-type logic.** Each statement handler
+is a single free function with a narrowly scoped job. Grouping them in a subdirectory
+keeps the top-level `compiler/` directory focused on cross-cutting concerns and makes
+it immediately clear where to find "how does init assignment compile?" vs "how does
+the whole compilation pipeline fit together?"
+
+**One header + one `.cpp` per function/class.** Each file contains exactly one public
+function or class. This makes dependencies between pieces grep-able via `#include`
+lines and keeps compilation units small for incremental builds.
+
+### Dependency graph (headers only)
+
+```
+CompileComponent.hpp
+  └── CompCache.hpp (forward-declared)
+      └── GateoAliases.hpp
+      └── Ast.hpp
+
+CompileStatement.hpp
+  └── NodeEmitter.hpp
+  └── SymbolTable.hpp
+  └── CompCache.hpp (forward-declared)
+
+CompileExpr.hpp
+  └── NodeEmitter.hpp
+  └── SymbolTable.hpp
+
+InlineGateo.hpp
+  └── NodeEmitter.hpp
+  └── GateoAliases.hpp
+
+statement/stmt_init.hpp        ─┐
+statement/stmt_mutation.hpp     │── NodeEmitter, SymbolTable
+statement/stmt_return.hpp      ─┘
+
+statement/stmt_comp_call.hpp   ──── NodeEmitter, SymbolTable, CompCache (fwd)
+```
+
+Note that `CompileExpr.hpp` and the non-CompCall statement headers have **no dependency
+on `CompCache`**. This is the loose coupling the design targets: expression compilation
+and most statement compilation can be built, tested, and reasoned about without any
+knowledge of the caching/subcomponent system.
 
 ## Implementation Steps
 

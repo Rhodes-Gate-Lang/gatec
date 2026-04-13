@@ -1,11 +1,16 @@
 #pragma once
 
-#include "core/Ast.hpp"
+#include "compiler/NodeEmitter.hpp"
+#include "compiler/SymbolTable.hpp"
+#include "parser/Ast.hpp"
+
+#include <cstdint>
 
 namespace gate {
 
-struct CompileContext;
-
-void stmt_init(const ast::InitAssign &stmt, CompileContext &ctx);
+void stmt_init(const ast::InitAssign &stmt,
+               SymbolTable &symbols,
+               NodeEmitter &emitter,
+               std::uint32_t parent_component);
 
 } // namespace gate
