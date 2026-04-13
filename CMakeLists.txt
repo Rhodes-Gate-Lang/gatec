@@ -50,20 +50,18 @@ FetchContent_MakeAvailable(gateo-cpp)
 
 # --- gate-lang library (everything except the CLI entry point) ---
 add_library(gate_lang STATIC
+  src/compiler/CompCache.cpp
   src/compiler/CompileComponent.cpp
   src/compiler/CompileExpr.cpp
-  src/compiler/CompileOps.cpp
   src/compiler/CompileStatement.cpp
-  src/compiler/Compiler.cpp
   src/compiler/InlineGateo.cpp
+  src/compiler/NodeEmitter.cpp
+  src/compiler/SymbolTable.cpp
   src/compiler/statement/comp_call.cpp
   src/compiler/statement/init.cpp
   src/compiler/statement/mutation.cpp
   src/compiler/statement/return_stmt.cpp
   src/parser/Parser.cpp
-  src/simulation/Simulation.cpp
-  src/ui/OutputFormatter.cpp
-  src/ui/Repl.cpp
 )
 
 target_include_directories(gate_lang
@@ -74,9 +72,13 @@ target_include_directories(gate_lang
 # PUBLIC: headers under include/ may include <peglib.h>; .gateo interop via gateo-cpp
 target_link_libraries(gate_lang PUBLIC peglib gateo::gateo)
 
-# --- CLI ---
-add_executable(gate-lang-cli src/main.cpp)
+# --- CLI (compiler driver: parse → CompCache → .gateo under build dir by default) ---
+add_executable(gate-lang-cli src/gatec.cpp)
 set_target_properties(gate-lang-cli PROPERTIES
-  OUTPUT_NAME gate-lang
+  OUTPUT_NAME gatec
 )
 target_link_libraries(gate-lang-cli PRIVATE gate_lang)
+# Default output directory for emitted `.gateo` files (override with argv[2])
+target_compile_definitions(gate-lang-cli PRIVATE
+  "GATEC_DEFAULT_GATEO_DIR=\"${CMAKE_BINARY_DIR}/gateo-cache\""
+)

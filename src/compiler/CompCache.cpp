@@ -2,6 +2,8 @@
 #include "compiler/CompileComponent.hpp"
 #include "compiler/CompileError.hpp"
 
+#include "gateo/io.hpp"
+
 namespace gate {
 
 CompCache::CompCache(const std::vector<ast::Comp> &program_comps) {
@@ -30,5 +32,15 @@ const GateObject &CompCache::resolve(const std::string &name) {
 
   return cache_.at(name);
 }
+
+void CompCache::write_cached_gateo_files(const std::filesystem::path &out_dir) const {
+  std::filesystem::create_directories(out_dir);
+  for (const auto &entry : cache_) {
+    const std::filesystem::path path = out_dir / (entry.first + ".gateo");
+    gateo::write_file(path, entry.second);
+  }
+}
+
+std::size_t CompCache::cache_size() const { return cache_.size(); }
 
 } // namespace gate

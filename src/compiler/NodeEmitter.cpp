@@ -3,6 +3,13 @@
 
 namespace gate {
 
+uint32_t NodeEmitter::node_count() const {
+  return static_cast<uint32_t>(obj_.nodes.size());
+}
+
+uint32_t NodeEmitter::component_count() const {
+  return static_cast<uint32_t>(obj_.components.size());
+}
 
 uint32_t NodeEmitter::emit_node(Node node) {
   obj_.nodes.push_back(node);

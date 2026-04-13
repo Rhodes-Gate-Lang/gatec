@@ -33,31 +33,26 @@ cmake -B build
 cmake --build build
 ```
 
+The compiler driver is **`build/gatec`** (CMake target `gate-lang-cli`).
+
 ## Usage
 
-Load a `.gate` file to enter the REPL:
+Compile a `.gate` file: every top-level component is resolved through `CompCache`, and each cached `GateObject` is written as **`<name>.gateo`**. By default files go to **`build/gateo-cache/`** (set at configure time; override with a second argument).
 
 ```
-$ ./build/gate-lang examples/adders.gate
-gate-lang repl — type 'help' for commands
-> run HalfAdder(1, 1)
-  sum = 0 (0b0)
-  carry = 1 (0b1)
-> run FullAdder(1, 1, 0)
-  sum = 0 (0b0)
-  cout = 1 (0b1)
+$ ./build/gatec examples/adders.gate
+wrote 2 .gateo file(s) to /path/to/repo/build/gateo-cache
 ```
 
-### REPL Commands
+```
+$ ./build/gatec examples/adders.gate ./my-gateo
+```
 
-| Command | Description |
-|---------|-------------|
-| `run Component(args...)` | Simulate a component with the given inputs |
-| `list` | Show all loaded components with their signatures |
-| `help` | Print available commands and input formats |
-| `exit` | Quit the REPL |
+### REPL *(not in tree yet)*
 
-### Input Formats
+Interactive simulation via a REPL is described in older docs; the current CLI is compile-and-emit only until `ui/Repl` is wired back in.
+
+### Input formats *(for future REPL / simulator)*
 
 | Format | Example | Notes |
 |--------|---------|-------|

@@ -23,7 +23,7 @@ You can build the CMake configuration with:
 and you can build the project with:
 `cmake --build build`
 and then run it with:
-`./build/gate-lang`
+`./build/gatec` (optional second argument: directory for `.gateo` output; default is `build/gateo-cache` from configure time)
 
 CMake fetches cpp-peglib and gateo-cpp automatically; gateo-cpp needs **protoc** and the C++ protobuf library on your machine (or pass `-DGATEO_FETCH_PROTOBUF=ON` to the first `cmake` command). The first configure also downloads the pinned gateo-schema release from GitHub, so you need network access then.
 

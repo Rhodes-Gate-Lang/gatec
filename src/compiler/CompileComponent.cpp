@@ -4,6 +4,8 @@
 #include "compiler/NodeEmitter.hpp"
 #include "compiler/SymbolTable.hpp"
 
+#include "gateo/io.hpp"
+
 namespace gate {
 
 GateObject compile_component(const ast::Comp &comp, CompCache &cache) {
@@ -31,7 +33,10 @@ GateObject compile_component(const ast::Comp &comp, CompCache &cache) {
 
   // The parser grammar guarantees that there will be a return statement, and that its the last in the comp
 
-  return emitter.take();
+  GateObject obj = emitter.take();
+  obj.version.major = gateo::supported_schema_major;
+  obj.version.minor = 0;
+  return obj;
 }
 
 } // namespace gate

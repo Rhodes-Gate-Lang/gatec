@@ -3,6 +3,7 @@
 #include "compiler/GateoAliases.hpp"
 #include "parser/Ast.hpp"
 
+#include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -21,6 +22,11 @@ public:
   /// Throws CyclicDependencyError if currently being compiled.
   /// Throws UndefinedComponentError if not found anywhere.
   const GateObject &resolve(const std::string &name);
+
+  /// Writes one `.gateo` file per entry in the in-memory cache (`<name>.gateo`).
+  void write_cached_gateo_files(const std::filesystem::path &out_dir) const;
+
+  [[nodiscard]] std::size_t cache_size() const;
 
 private:
   std::unordered_map<std::string, const ast::Comp *> ast_comps_;
