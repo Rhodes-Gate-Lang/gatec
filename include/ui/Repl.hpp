@@ -4,9 +4,8 @@
  */
 #pragma once
 
-#include "Ast.hpp"
-#include "Circuit.hpp"
-#include "Compiler.hpp"
+#include "compiler/ComponentRegistry.hpp"
+#include "simulation/PreparedCircuit.hpp"
 
 #include <string>
 #include <unordered_map>

@@ -2,8 +2,8 @@
  * File: Parser.cpp
  * Purpose: Minimal parser skeleton — tokenize identifiers with whitespace/comment skipping.
  */
-#include "Parser.hpp"
-#include "Ast.hpp"
+#include "parser/Parser.hpp"
+#include "core/Ast.hpp"
 
 #include <peglib.h>
 

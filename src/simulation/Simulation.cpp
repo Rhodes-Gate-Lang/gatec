@@ -2,33 +2,18 @@
  * File: Simulation.cpp
  * Purpose: Circuit preparation (Kahn's algorithm) and gate evaluation loop.
  */
-#include "Simulation.hpp"
+#include "simulation/Simulation.hpp"
 
 #include <cassert>
 #include <cstdint>
 #include <queue>
-#include <sstream>
-#include <string>
 #include <vector>
 
 namespace gate {
 
-namespace {
-
-std::string to_binary(uint64_t val, int width) {
-  std::string result;
-  result.reserve(width);
-  for (int b = width - 1; b >= 0; --b) {
-    result += ((val >> b) & 1) ? '1' : '0';
-  }
-  return result;
-}
-
-} // namespace
-
 // ── prepare ─────────────────────────────────────────────────────────────────
-/// Topologically sorts the circuit for evaluation. Until Kahn's algorithm is
-/// implemented, returns an empty eval_order (simulate will produce zeros).
+/// Topologically sorts the circuit nodes via Kahn's algorithm so that every
+/// node is evaluated after all of its inputs.
 PreparedCircuit prepare(Circuit circuit) {
   PreparedCircuit pc;
   pc.circuit = std::move(circuit);
@@ -36,9 +21,6 @@ PreparedCircuit prepare(Circuit circuit) {
   const auto &nodes = pc.circuit.nodes;
   const size_t n = nodes.size();
 
-  // Kahn's algorithm:
-  // - in_degree[v] counts remaining unmet dependencies for v.
-  // - consumers[u] lists nodes that depend on u.
   std::vector<size_t> in_degree(n, 0);
   std::vector<std::vector<size_t>> consumers(n);
 
@@ -70,8 +52,6 @@ PreparedCircuit prepare(Circuit circuit) {
     }
   }
 
-  // If we couldn't process every node, the graph contains a cycle (or a node
-  // depends on a missing input, which would have asserted above).
   assert(pc.eval_order.size() == n && "circuit contains a cycle");
 
   return pc;
@@ -122,22 +102,6 @@ std::vector<uint64_t> simulate(const PreparedCircuit &pc,
     results.push_back(values[out.signal.node]);
   }
   return results;
-}
-
-// ── format_outputs ──────────────────────────────────────────────────────────
-/// Pairs each output name with its result value, formatted as decimal with
-/// a binary representation zero-padded to the signal's width.
-std::vector<std::string> format_outputs(const PreparedCircuit &pc,
-                                         const std::vector<uint64_t> &results) {
-  std::vector<std::string> lines;
-  lines.reserve(pc.circuit.outputs.size());
-  for (size_t i = 0; i < pc.circuit.outputs.size() && i < results.size(); ++i) {
-    const auto &out = pc.circuit.outputs[i];
-    std::ostringstream ss;
-    ss << out.name << " = " << results[i] << " (0b" << to_binary(results[i], out.signal.width) << ")";
-    lines.push_back(ss.str());
-  }
-  return lines;
 }
 
 } // namespace gate

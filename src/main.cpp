@@ -2,8 +2,8 @@
  * File: main.cpp
  * Purpose: CLI entry — load a `.gate` file, parse it, and launch the REPL.
  */
-#include "Parser.hpp"
-#include "Repl.hpp"
+#include "parser/Parser.hpp"
+#include "ui/Repl.hpp"
 
 #include <fstream>
 #include <iostream>

@@ -2,8 +2,10 @@
  * File: Circuit.hpp
  * Purpose: Core data structures for the compiled circuit graph.
  *
- * Circuit is the compiler's output — an immutable flat graph of primitive gates.
- * PreparedCircuit adds a topological evaluation order for simulation or codegen.
+ * These types are the shared vocabulary for the gate-lang pipeline.
+ * GateType, Signal, Node, and Circuit belong together — they all describe
+ * what a circuit IS. PreparedCircuit (the evaluation-ready form) lives in
+ * simulation/PreparedCircuit.hpp since it's a simulation-phase concept.
  */
 #pragma once
 
@@ -42,11 +44,6 @@ struct Circuit {
     nodes.push_back(Node{type, std::move(node_inputs), width});
     return Signal{idx, width};
   }
-};
-
-struct PreparedCircuit {
-  Circuit circuit;
-  std::vector<size_t> eval_order;
 };
 
 } // namespace gate

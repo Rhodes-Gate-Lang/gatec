@@ -5,10 +5,11 @@
  * Input value parsing is extensible: to add a new format (hex, signed, float),
  * add a try_parse_* function and a call to it in parse_value().
  */
-#include "Repl.hpp"
-#include "Compiler.hpp"
-#include "Error.hpp"
-#include "Simulation.hpp"
+#include "ui/Repl.hpp"
+#include "compiler/CompileError.hpp"
+#include "compiler/Compiler.hpp"
+#include "simulation/Simulation.hpp"
+#include "ui/OutputFormatter.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -144,7 +145,7 @@ std::optional<RunCommand> parse_run_args(const std::string &text) {
 // ── Repl ────────────────────────────────────────────────────────────────────
 
 Repl::Repl(const ast::Program &program)
-    : registry_(build_registry(program)) {}
+    : registry_(program) {}
 
 /// Main loop: reads lines, dispatches commands.
 void Repl::run() {
@@ -188,17 +189,17 @@ void Repl::handle_run(const std::string &args) {
   // Compile and cache on first use.
   auto cache_hit = cache_.find(cmd->component);
   if (cache_hit == cache_.end()) {
-    ErrorReporter errors;
-    auto circuit = compile_component(cmd->component, registry_, errors);
-    if (!circuit) {
-      std::cerr << "compile error: " << errors.format_all() << "\n";
+    try {
+      Circuit circuit = compile_component(cmd->component, registry_);
+      cache_hit = cache_.emplace(cmd->component, prepare(std::move(circuit))).first;
+    } catch (const CompileError &e) {
+      std::cerr << "compile error: " << e.what() << "\n";
       return;
     }
-    cache_hit = cache_.emplace(cmd->component, prepare(std::move(*circuit))).first;
   }
 
   const PreparedCircuit &pc = cache_hit->second;
-  const auto &params = registry_.at(cmd->component).params;
+  const auto &params = registry_.lookup(cmd->component).params;
 
   // Validate argument count.
   if (cmd->args.size() != params.size()) {
@@ -222,12 +223,6 @@ void Repl::handle_run(const std::string &args) {
       return;
     }
     input_values.push_back(parsed->bits);
-  }
-
-  // Warn if topological sort hasn't been implemented yet.
-  bool has_gates = pc.circuit.nodes.size() > pc.circuit.num_inputs;
-  if (pc.eval_order.empty() && has_gates) {
-    std::cerr << "note: topological sort not yet implemented — results will be incorrect\n";
   }
 
   // Simulate and display.
