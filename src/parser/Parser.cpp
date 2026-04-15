@@ -254,8 +254,8 @@ static constexpr const char *kGrammar = R"(
   return_stmt   <- 'return' IDENT (',' IDENT)* ';'
 
   expr          <- unary (bin_operator unary)*
-  shiftop       <- 'LSL' / 'LSR'
-  unary         <- 'NOT' unary / atom / shiftop INT unary
+  shift_op       <- 'LSL' / 'LSR'
+  unary         <- 'NOT' unary / shiftop INT unary / atom
   atom          <- '(' expr ')' / IDENT
   bin_operator  <- 'AND' / 'OR' / 'XOR'
 
