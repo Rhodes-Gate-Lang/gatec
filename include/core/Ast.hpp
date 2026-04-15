@@ -19,6 +19,7 @@ struct VarInit {
 };
 
 enum class BinOp { And, Or, Xor };
+enum class ShiftDir { Left, Right };
 
 // ── Expressions (recursive) ────────────────────────────────────────────────
 
@@ -34,8 +35,14 @@ struct BinExpr {
   std::shared_ptr<Expr> rhs;
 };
 
+struct ShiftExpr {
+  ShiftDir dir;
+  int amount;
+  std::shared_ptr<Expr> operand;
+};
+
 struct Expr {
-  std::variant<std::string, UnaryExpr, BinExpr> data;
+  std::variant<std::string, UnaryExpr, BinExpr, ShiftExpr> data;
 };
 
 // ── Assignments ─────────────────────────────────────────────────────────────
