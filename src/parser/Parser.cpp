@@ -68,6 +68,15 @@ void attach_actions(peg::parser &pg) {
     }
   };
 
+  // shift_op <- 'LSL' / 'LSR'
+  // vs.choice returnns which alternative matched (0, or 1)
+  pg["shift_op"] = [](const SemanticValues &vs) -> ast::ShiftDir {
+   switch (vs.choice()) {
+   case 0:  return ast::ShiftDir::Left;
+   default: return ast::ShiftDir::Right;
+   }
+  };
+
   // atom <- '(' expr ')' / IDENT
   // choice 0: parenthesized expr — just unwrap and pass through.
   // choice 1: bare identifier — wrap the string in an Expr.
@@ -84,17 +93,27 @@ void attach_actions(peg::parser &pg) {
   // choice 0: the 'NOT' literal is invisible, vs[0] is the inner Expr.
   // choice 1: pass through the atom.
   pg["unary"] = [](const SemanticValues &vs) -> ast::Expr {
-    switch (vs.choice()) {
-    case 0: {
-      auto inner = std::any_cast<ast::Expr>(vs[0]);
-      return ast::Expr{
-          ast::UnaryExpr{std::make_shared<ast::Expr>(std::move(inner))}};
+     switch (vs.choice()) {
+     case 0: { // 'NOT' unary
+         auto inner = std::any_cast<ast::Expr>(vs[0]);
+         return ast::Expr{
+             ast::UnaryExpr{std::make_shared<ast::Expr>(std::move(inner))}
+         };
+     }
+     case 1: { // shiftop INT unary
+        // vs[0] is ShiftDir (from our shiftop action)
+        // vs[1] is int (from our INT action)
+        // vs[2] is the inner Expr
+        return ast::Expr{ast::ShiftExpr{
+            std::any_cast<ast::ShiftDir>(vs[0]),
+            std::any_cast<int>(vs[1]),
+            std::make_shared<ast::Expr>(std::any_cast<ast::Expr>(vs[2]))
+        }};    
     }
-    default:
-      return std::any_cast<ast::Expr>(vs[0]);
+        default: // atom
+        return std::any_cast<ast::Expr>(vs[0]);
     }
-  };
-
+   };
 
 
   // binexpr <- unary (bin_operator unary)*
@@ -236,7 +255,7 @@ static constexpr const char *kGrammar = R"(
 
   expr          <- unary (bin_operator unary)*
   shiftop       <- 'LSL' / 'LSR'
-  unary         <- 'NOT' unary / atom
+  unary         <- 'NOT' unary / atom / shiftop INT unary
   atom          <- '(' expr ')' / IDENT
   bin_operator  <- 'AND' / 'OR' / 'XOR'
 
