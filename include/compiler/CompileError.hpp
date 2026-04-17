@@ -76,6 +76,16 @@ public:
   std::string component_name;
 };
 
+class MissingReturnError : public CompileError {
+public:
+  explicit MissingReturnError(std::string comp_name, SourceLocation loc = {})
+      : CompileError("component '" + comp_name + "' is missing a return statement",
+                     std::move(loc)),
+        component_name(std::move(comp_name)) {}
+
+  std::string component_name;
+};
+
 // ── Width / arity errors ──────────────────────────────────────────────────
 
 /// Context string describes what was being checked, e.g. "'x' declared",

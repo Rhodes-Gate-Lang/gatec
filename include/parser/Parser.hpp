@@ -4,7 +4,7 @@
  */
 #pragma once
 
-#include "core/Ast.hpp"
+#include "parser/Ast.hpp"
 
 #include <optional>
 #include <string>

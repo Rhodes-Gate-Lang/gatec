@@ -15,7 +15,7 @@ namespace gate::ast {
 
 struct VarInit {
   std::string ident;
-  int width;
+  uint32_t width;
 };
 
 enum class BinOp { And, Or, Xor };
@@ -36,7 +36,7 @@ struct BinExpr {
 
 struct Expr {
   std::variant<std::string, UnaryExpr, BinExpr> data;
-};
+}; // TODO: Refactor to a using
 
 // ── Assignments ─────────────────────────────────────────────────────────────
 

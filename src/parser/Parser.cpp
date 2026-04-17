@@ -3,11 +3,12 @@
  * Purpose: Minimal parser skeleton — tokenize identifiers with whitespace/comment skipping.
  */
 #include "parser/Parser.hpp"
-#include "core/Ast.hpp"
+#include "parser/Ast.hpp"
 
 #include <peglib.h>
 
 #include <any>
+#include <cstdint>
 
 namespace gate {
 
@@ -42,7 +43,7 @@ void attach_actions(peg::parser &pg) {
   pg["var_init"] = [](const SemanticValues &vs) -> ast::VarInit {
     return ast::VarInit{
         std::any_cast<std::string>(vs[0]),
-        std::any_cast<int>(vs[1]),
+        static_cast<std::uint32_t>(std::any_cast<int>(vs[1])),
     };
   };
 
