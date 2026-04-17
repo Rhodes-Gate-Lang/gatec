@@ -69,7 +69,7 @@ void attach_actions(peg::parser &pg) {
   };
 
   // shift_op <- 'LSL' / 'LSR'
-  // vs.choice returnns which alternative matched (0, or 1)
+  // vs.choice returns which alternative matched (0, or 1)
   pg["shift_op"] = [](const SemanticValues &vs) -> ast::ShiftDir {
    switch (vs.choice()) {
    case 0:  return ast::ShiftDir::Left;
@@ -254,13 +254,8 @@ static constexpr const char *kGrammar = R"(
   return_stmt   <- 'return' IDENT (',' IDENT)* ';'
 
   expr          <- unary (bin_operator unary)*
-<<<<<<< HEAD
   shift_op       <- 'LSL' / 'LSR'
-  unary         <- 'NOT' unary / shiftop INT unary / atom
-=======
-  shiftop       <- 'LSL' / 'LSR'
-  unary         <- 'NOT' unary / atom / shift_op INT unary
->>>>>>> 4fdfe1d (should work with PEG)
+  unary         <- 'NOT' unary / shift_op INT unary / atom
   atom          <- '(' expr ')' / IDENT
   bin_operator  <- 'AND' / 'OR' / 'XOR'
 
