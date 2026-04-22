@@ -43,8 +43,8 @@ struct ShiftExpr {
 
 
 struct Expr {
-  std::variant<std::string, UnaryExpr, BinExpr> data;
-}; // TODO: Refactor to a using
+  std::variant<std::string, UnaryExpr, BinExpr, ShiftExpr> data;
+};
 
 // ── Assignments ─────────────────────────────────────────────────────────────
 
