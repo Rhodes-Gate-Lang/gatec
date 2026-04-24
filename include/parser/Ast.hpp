@@ -18,32 +18,30 @@ struct VarInit {
   uint32_t width;
 };
 
-enum class BinOp { And, Or, Xor };
-enum class ShiftDir { Left, Right };
-
 // ── Expressions (recursive) ────────────────────────────────────────────────
 
 struct Expr;
 
-struct UnaryExpr {
-  std::shared_ptr<Expr> operand;
-};
+// Nullary Expressions
+struct VarRef { std::string name; };
+struct Literal { uint64_t bits; };
 
-struct BinExpr {
-  std::shared_ptr<Expr> lhs;
-  BinOp op;
-  std::shared_ptr<Expr> rhs;
-};
+// Unary Expressions
+struct NotExpr { std::shared_ptr<Expr> operand; };
 
-struct ShiftExpr {
-  ShiftDir dir;
-  int amount;
-  std::shared_ptr<Expr> operand;
-};
+// Binary Expressions
+struct LeftShift  { std::shared_ptr<Expr> operand; std::shared_ptr<Expr> shift_amount; };
+struct RightShift { std::shared_ptr<Expr> operand; std::shared_ptr<Expr> shift_amount; };
+struct AndExpr    { std::shared_ptr<Expr> lhs; std::shared_ptr<Expr> rhs; };
+struct OrExpr     { std::shared_ptr<Expr> lhs; std::shared_ptr<Expr> rhs; };
+struct XorExpr    { std::shared_ptr<Expr> lhs; std::shared_ptr<Expr> rhs; };
 
+// N-Ary Expressions
+struct MergeExpr  { std::vector<std::shared_ptr<Expr>> operands; };
 
+// Actual EXPR splitter
 struct Expr {
-  std::variant<std::string, UnaryExpr, BinExpr, ShiftExpr> data;
+  std::variant<VarRef, Literal, NotExpr, LeftShift, RightShift, AndExpr, OrExpr, XorExpr, MergeExpr> data;
 };
 
 // ── Assignments ─────────────────────────────────────────────────────────────
