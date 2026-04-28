@@ -81,5 +81,5 @@ set_target_properties(gate-lang-cli PROPERTIES
 target_link_libraries(gate-lang-cli PRIVATE gate_lang)
 # Default output directory for emitted `.gateo` files (override with argv[2])
 target_compile_definitions(gate-lang-cli PRIVATE
-  "GATEC_DEFAULT_GATEO_DIR=\"${CMAKE_BINARY_DIR}/gateo-cache\""
+  "GATEC_DEFAULT_GATEO_DIR=\"./build/\""
 )
