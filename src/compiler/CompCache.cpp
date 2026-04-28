@@ -9,6 +9,9 @@ namespace gate {
 CompCache::CompCache(const std::vector<ast::Comp> &program_comps) {
   for (const ast::Comp &c : program_comps)
     ast_comps_[c.name] = &c;
+
+  // TODO: (future) Look in the build-cache dir (with matching hash)
+  // TODO: (future) Support an stdlib path for lookups as well
 }
 
 const GateObject &CompCache::resolve(const std::string &name) {
@@ -16,7 +19,7 @@ const GateObject &CompCache::resolve(const std::string &name) {
   if (auto it = cache_.find(name); it != cache_.end())
     return it->second;
 
-  // TODO: Check filesystem for pre-built .gateo file.
+  // TODO: Check file_cached once implemented
 
   // Find it in the AST and compile it
   auto ast_it = ast_comps_.find(name);

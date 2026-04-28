@@ -11,6 +11,9 @@
 
 #include <any>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 
 namespace gate {
 
@@ -20,7 +23,7 @@ using namespace peg;
 using ast::Program;
 
 
-void attach_actions(peg::parser &pg) {
+void attach_actions(peg::parser &pg, const std::filesystem::path &source_path) {
   /*
    * Notes for understanding how this stuff works:
    *  - Everything is a lambda that tells the parser how to deal with certain rules in the grammar
@@ -61,9 +64,15 @@ void attach_actions(peg::parser &pg) {
     return vs.transform<ast::VarInit>();
   };
 
-  // import_stmt: the < [^"]+ > capture gives us the filename via token_to_string
-  pg["import_stmt"] = [](const SemanticValues &vs) -> ast::Import {
-    return ast::Import{vs.token_to_string()};
+  const std::filesystem::path import_base_dir = source_path.parent_path();
+
+  // import_stmt: resolve import paths relative to the current source file.
+  pg["import_stmt"] = [import_base_dir](const SemanticValues &vs) -> ast::Import {
+    const std::filesystem::path raw_path = vs.token_to_string();
+    const std::filesystem::path resolved_path =
+        raw_path.is_absolute() ? raw_path.lexically_normal()
+                               : std::filesystem::absolute(import_base_dir / raw_path).lexically_normal();
+    return ast::Import{resolved_path.string()};
   };
 
   // -- Expressions --
@@ -302,11 +311,25 @@ static constexpr const char *kGrammar = R"(
   %whitespace   <- [ \t\r\n]* ('//' (![\n] .)* [ \t\r\n]*)*
 )";
 
+std::string read_stream(std::istream &in) {
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  return ss.str();
+}
+
 } // namespace
 
-std::optional<ast::Program> parse_program(std::string_view source,
-                                          const char *path,
+std::optional<ast::Program> parse_program(const std::filesystem::path &path,
                                           std::string *error_out) {
+  std::ifstream source_file(path);
+  if (!source_file) {
+    if (error_out) {
+      *error_out = "cannot open file: " + path.string();
+    }
+    return std::nullopt;
+  }
+  const std::string source = read_stream(source_file);
+
   peg::parser peg_parser(kGrammar);
   if (!peg_parser) {
     if (error_out) {
@@ -314,8 +337,7 @@ std::optional<ast::Program> parse_program(std::string_view source,
     }
     return std::nullopt;
   }
-
-  attach_actions(peg_parser);
+  attach_actions(peg_parser, path);
 
   peg_parser.set_logger(
       [error_out](std::size_t line, std::size_t col, const std::string &msg,
@@ -327,7 +349,9 @@ std::optional<ast::Program> parse_program(std::string_view source,
       });
 
   ast::Program program;
-  if (!peg_parser.parse_n(source.data(), source.size(), program, path)) {
+  const std::string path_string = path.string();
+  if (!peg_parser.parse_n(source.data(), source.size(), program,
+                          path_string.c_str())) {
     return std::nullopt;
   }
   return program;

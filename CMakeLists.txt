@@ -61,6 +61,7 @@ add_library(gate_lang STATIC
   src/compiler/statement/init.cpp
   src/compiler/statement/mutation.cpp
   src/compiler/statement/return_stmt.cpp
+  src/ProgramLoader.cpp
   src/parser/Parser.cpp
 )
 

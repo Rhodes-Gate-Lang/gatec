@@ -5,21 +5,13 @@
  */
 #include "compiler/CompCache.hpp"
 #include "compiler/CompileError.hpp"
-#include "parser/Parser.hpp"
+#include "ProgramLoader.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 
 namespace {
-
-std::string read_stream(std::istream &in) {
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  return ss.str();
-}
 
 void print_usage(const char *argv0) {
   std::cerr << "usage: " << argv0 << " <file.gate> [gateo-out-dir]\n"
@@ -35,18 +27,19 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  const char *path = argv[1];
-  std::ifstream file(path);
-  if (!file) {
-    std::cerr << "cannot open: " << path << '\n';
+  const std::filesystem::path entry_path = argv[1];
+  std::string err;
+  auto program = gate::load_program(entry_path, &err);
+  if (!program) {
+    std::cerr << "parse error";
+    if (!err.empty())
+      std::cerr << ": " << err;
+    std::cerr << '\n';
     return 1;
   }
 
-  const std::string source = read_stream(file);
-  std::string err;
-  auto program = gate::parse_program(source, path, &err);
-  if (!program) {
-    std::cerr << "parse error";
+  if (!gate::resolve_imports(*program, &err)) {
+    std::cerr << "import resolution error";
     if (!err.empty())
       std::cerr << ": " << err;
     std::cerr << '\n';
@@ -61,13 +54,15 @@ int main(int argc, char **argv) {
     gate::CompCache cache(program->components);
     for (const gate::ast::Comp &c : program->components)
       cache.resolve(c.name);
+
     cache.write_cached_gateo_files(gateo_dir);
-    std::cout << "wrote " << cache.cache_size() << " .gateo file(s) to "
-              << gateo_dir.string() << '\n';
-  } catch (const gate::CompileError &e) {
+    std::cout << "wrote " << cache.cache_size() << " .gateo file(s) to " << gateo_dir.string() << '\n';
+  }
+  catch (const gate::CompileError &e) {
     std::cerr << e.what() << '\n';
     return 1;
-  } catch (const std::exception &e) {
+  }
+  catch (const std::exception &e) {
     std::cerr << "compile / emit error: " << e.what() << '\n';
     return 1;
   }

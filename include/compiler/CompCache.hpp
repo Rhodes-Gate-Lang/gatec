@@ -31,6 +31,7 @@ public:
 private:
   std::unordered_map<std::string, const ast::Comp *> ast_comps_;
   std::unordered_map<std::string, GateObject> cache_;
+  std::unordered_map<std::string, std::filesystem::path> file_cached_;
   std::unordered_set<std::string> in_progress_;
 };
 

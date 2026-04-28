@@ -100,7 +100,7 @@ std::uint32_t compile_split(const ast::SplitExpr &expr,
                             const SymbolTable &symbols,
                             NodeEmitter &emitter,
                             std::uint32_t parent_component) {
-  if (expr.lo < 0 || expr.hi <= expr.lo)
+  if (expr.lo < 0 || expr.hi < expr.lo)
     throw CompileError("split range [" + std::to_string(expr.lo) + "," +
                        std::to_string(expr.hi) + ") is invalid");
 
@@ -110,7 +110,7 @@ std::uint32_t compile_split(const ast::SplitExpr &expr,
   if (static_cast<std::uint32_t>(expr.hi) > source_width)
     throw WidthMismatchError("split upper bound", static_cast<int>(source_width), expr.hi);
 
-  std::uint32_t width = static_cast<std::uint32_t>(expr.hi - expr.lo);
+  std::uint32_t width = static_cast<std::uint32_t>(expr.hi - expr.lo + 1);
 
   Node node;
   node.type     = GateType::Split;

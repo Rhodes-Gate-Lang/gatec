@@ -4,6 +4,7 @@
  */
 #pragma once
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <variant>
@@ -80,7 +81,7 @@ struct Comp {
 };
 
 struct Import {
-  std::string path;
+  std::filesystem::path path;
 };
 
 struct Program {
