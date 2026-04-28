@@ -1,14 +1,14 @@
 import "adders.gate"
 
 comp RCA4(a:4, b:4, cin:1) {
-    // Chain FullAdders. Using [N,N] assuming inclusive slicing for single bits.
-    sum0:1, c1:1   = FullAdder(a[0:0], b[0:0], cin);
-    sum1:1, c2:1   = FullAdder(a[1:1], b[1:1], c1);
-    sum2:1, c3:1   = FullAdder(a[2:2], b[2:2], c2);
-    sum3:1, cout:1 = FullAdder(a[3:3], b[3:3], c3);
+  // Chain FullAdders. Using [N,N] assuming inclusive slicing for single bits.
 
-    // Merge individual sum bits into a 4-bit bus (most to least significant bit order)
-    sum:4 = {sum3, sum2, sum1, sum0};
+  sum3:1, c1:1   = FullAdder(a[3:3], b[3:3], cin);   // LSB stage
+  sum2:1, c2:1   = FullAdder(a[2:2], b[2:2], c1);
+  sum1:1, c3:1   = FullAdder(a[1:1], b[1:1], c2);
+  sum0:1, cout:1 = FullAdder(a[0:0], b[0:0], c3);    // MSB stage
 
-    return sum, cout;
+  sum:4 = {sum0, sum1, sum2, sum3};                  // MSB..LSB
+
+  return sum, cout;
 }
